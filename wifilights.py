@@ -92,5 +92,9 @@ while True:
     conn.send('Connection: close\n\n')
     conn.sendall(response)
     conn.close()
+<<<<<<< HEAD
 
-    #cambio adrian
+    #cambio  adrian 2
+=======
+    #cambio ian
+>>>>>>> 2c90e5551a98142ed53f318f40f2c2bb2f45711b
