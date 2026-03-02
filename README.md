@@ -1,0 +1,1 @@
+jnknkóm´m
