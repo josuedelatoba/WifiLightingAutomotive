@@ -3,23 +3,20 @@ import socket
 import time
 from machine import Pin
 
-SSID = "TU_SSID"
-PASSWORD = "TU_PASSWORD"
+AP_SSID = 'ESP32_CARRO'
+AP_PASSWORD = '12345678'
 
-wlan = network.WLAN(network.STA_IF)
-
-wlan.active(False)
+ap = network.WLAN(network.AP_IF)
+ap.active(False)
 time.sleep(1)
+ap.active(True)
+ap.config(essid=AP_SSID, password=AP_PASSWORD)
+time.sleep(2)
 
-wlan.active(True)
-time.sleep(1)
-
-wlan.connect(SSID, PASSWORD)
-
-while not wlan.isconnected():
-    time.sleep(0.5)
-
-print("Connected:", wlan.ifconfig())
+ip = ap.ifconfig()[0]
+print('Red WiFi creada:', AP_SSID)
+print('Password:', AP_PASSWORD)
+print('IP:', ip)
 
 PIN_DRL = 19
 PIN_LOW = 18
@@ -369,7 +366,9 @@ s.bind(('', 80))
 s.listen(3)
 s.settimeout(0.2)
 
-print("Servidor listo! Abre: http://{}".format(ip))
+print("Servidor listo")
+print("Conectate a:", AP_SSID)
+print("Abre en tu navegador: http://192.168.4.1")
 
 apply_headlights_logic()
 update_aux_lights()
