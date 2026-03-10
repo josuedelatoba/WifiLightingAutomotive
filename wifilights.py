@@ -3,19 +3,23 @@ import socket
 import time
 from machine import Pin
 
-SSID = 'TU_SSID'
-PASSWORD = 'TU_PASSWORD'
+SSID = "TU_SSID"
+PASSWORD = "TU_PASSWORD"
 
 wlan = network.WLAN(network.STA_IF)
+
+wlan.active(False)
+time.sleep(1)
+
 wlan.active(True)
+time.sleep(1)
+
 wlan.connect(SSID, PASSWORD)
 
 while not wlan.isconnected():
-    pass
+    time.sleep(0.5)
 
-ip = wlan.ifconfig()[0]
-print('Conexion WiFi establecida:', SSID)
-print('IP:', ip)
+print("Connected:", wlan.ifconfig())
 
 PIN_DRL = 19
 PIN_LOW = 18
