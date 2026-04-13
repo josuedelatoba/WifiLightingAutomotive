@@ -6,17 +6,26 @@ from machine import Pin
 AP_SSID = 'ESP32_CARRO'
 AP_PASSWORD = '12345678'
 
+sta = network.WLAN(network.STA_IF)
+sta.active(False)
+
 ap = network.WLAN(network.AP_IF)
 ap.active(False)
 time.sleep(1)
 ap.active(True)
-ap.config(essid=AP_SSID, password=AP_PASSWORD)
+time.sleep(1)
+
+try:
+    ap.config(essid=AP_SSID, password=AP_PASSWORD, authmode=3)
+except:
+    ap.config(essid=AP_SSID)
+
 time.sleep(2)
 
 ip = ap.ifconfig()[0]
-print('Red WiFi creada:', AP_SSID)
-print('Password:', AP_PASSWORD)
-print('IP:', ip)
+print("Red WiFi creada:", AP_SSID)
+print("Password:", AP_PASSWORD)
+print("IP:", ip)
 
 PIN_DRL = 19
 PIN_LOW = 18
@@ -204,8 +213,7 @@ def web_page():
     door_r_open = (door_right.value() == 0)
     trunk_is_open = (trunk_switch.value() == 0)
 
-    html = """
-<!DOCTYPE html>
+    html = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -215,25 +223,25 @@ def web_page():
 </head>
 <body style="font-family:Arial;background:#0b1220;color:#fff;margin:0;padding:16px">
 <h2 style="margin:0 0 10px 0">Control de Luces Automotrices</h2>
-<p style="margin:0 0 18px 0;color:#b8c1d1">ESP32 IP: {ip}</p>
+<p style="margin:0 0 18px 0;color:#b8c1d1">ESP32 IP: """ + ip + """</p>
 
 <div style="background:#111a2e;border-radius:12px;padding:14px;margin-bottom:12px">
   <h3 style="margin:0 0 10px 0;font-size:16px">Luces delanteras</h3>
 
   <div style="margin:10px 0">
-    <b>DRL</b> {drl_s}<br>
+    <b>DRL</b> """ + status_badge(drl_out) + """<br>
     <a href="/?drl=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?drl=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
 
   <div style="margin:10px 0">
-    <b>Bajas</b> {low_s}<br>
+    <b>Bajas</b> """ + status_badge(low_out) + """<br>
     <a href="/?low=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?low=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
 
   <div style="margin:10px 0">
-    <b>Altas</b> {high_s}<br>
+    <b>Altas</b> """ + status_badge(high_out) + """<br>
     <a href="/?high=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?high=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
@@ -243,19 +251,19 @@ def web_page():
   <h3 style="margin:0 0 10px 0;font-size:16px">Direccionales</h3>
 
   <div style="margin:10px 0">
-    <b>Izquierda</b> {left_s}<br>
+    <b>Izquierda</b> """ + status_badge(state["left"]) + """<br>
     <a href="/?left=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?left=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
 
   <div style="margin:10px 0">
-    <b>Derecha</b> {right_s}<br>
+    <b>Derecha</b> """ + status_badge(state["right"]) + """<br>
     <a href="/?right=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?right=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
 
   <div style="margin:10px 0">
-    <b>Hazard</b> {haz_s}<br>
+    <b>Hazard</b> """ + status_badge(state["hazard"]) + """<br>
     <a href="/?hazard=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?hazard=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
@@ -265,17 +273,17 @@ def web_page():
   <h3 style="margin:0 0 10px 0;font-size:16px">Luces traseras</h3>
 
   <div style="margin:10px 0">
-    <b>Traseras nocturnas</b> {tail_s}
+    <b>Traseras nocturnas</b> """ + status_badge(tail_out) + """
   </div>
 
   <div style="margin:10px 0">
-    <b>Freno</b> {brake_s}<br>
+    <b>Freno</b> """ + status_badge(state["brake"]) + """<br>
     <a href="/?brake=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?brake=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
 
   <div style="margin:10px 0">
-    <b>Reversa</b> {reverse_s}<br>
+    <b>Reversa</b> """ + status_badge(state["reverse"]) + """<br>
     <a href="/?reverse=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?reverse=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
   </div>
@@ -285,30 +293,30 @@ def web_page():
   <h3 style="margin:0 0 10px 0;font-size:16px">Cortesía</h3>
 
   <div style="margin:10px 0">
-    <b>Cabina</b> {cabin_mode_s}<br>
+    <b>Cabina</b> """ + mode_badge(state["cabin_mode"]) + """<br>
     <a href="/?cabin_mode=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
     <a href="/?cabin_mode=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
     <a href="/?cabin_mode=auto"><button style="width:110px;height:34px;margin-top:6px">AUTO</button></a>
   </div>
 
   <div style="margin:10px 0">
-    <b>Puerta izquierda</b> {door_l_s}
+    <b>Puerta izquierda</b> """ + sensor_badge(door_l_open) + """
   </div>
 
   <div style="margin:10px 0">
-    <b>Puerta derecha</b> {door_r_s}
+    <b>Puerta derecha</b> """ + sensor_badge(door_r_open) + """
   </div>
 
   <div style="margin:10px 0">
-    <b>Cajuela</b> {trunk_s}
+    <b>Cajuela</b> """ + sensor_badge(trunk_is_open) + """
   </div>
 
   <div style="margin:10px 0">
-    <b>Luz cabina</b> {cabin_light_s}
+    <b>Luz cabina</b> """ + status_badge(cabin_light.value()) + """
   </div>
 
   <div style="margin:10px 0">
-    <b>Luz cajuela</b> {trunk_light_s}
+    <b>Luz cajuela</b> """ + status_badge(trunk_light.value()) + """
   </div>
 </div>
 
@@ -317,25 +325,7 @@ Nota: Altas enciende también Bajas. Bajas o Altas apagan DRL y encienden las tr
 </p>
 
 </body>
-</html>
-""".format(
-        ip=ip,
-        drl_s=status_badge(drl_out),
-        low_s=status_badge(low_out),
-        high_s=status_badge(high_out),
-        left_s=status_badge(state["left"]),
-        right_s=status_badge(state["right"]),
-        haz_s=status_badge(state["hazard"]),
-        tail_s=status_badge(tail_out),
-        brake_s=status_badge(state["brake"]),
-        reverse_s=status_badge(state["reverse"]),
-        cabin_mode_s=mode_badge(state["cabin_mode"]),
-        door_l_s=sensor_badge(door_l_open),
-        door_r_s=sensor_badge(door_r_open),
-        trunk_s=sensor_badge(trunk_is_open),
-        cabin_light_s=status_badge(cabin_light.value()),
-        trunk_light_s=status_badge(trunk_light.value())
-    )
+</html>"""
     return html
 
 def parse_request(req):
@@ -394,11 +384,11 @@ while True:
         update_courtesy_lights()
 
         resp = web_page()
-        conn.send('HTTP/1.1 200 OK\r\n')
-        conn.send('Content-Type: text/html; charset=utf-8\r\n')
-        conn.send('Connection: close\r\n\r\n')
+        conn.send("HTTP/1.1 200 OK\r\n")
+        conn.send("Content-Type: text/html; charset=utf-8\r\n")
+        conn.send("Connection: close\r\n\r\n")
         conn.sendall(resp)
-    except:
-        pass
+    except Exception as e:
+        print("Error:", e)
     finally:
         conn.close()
