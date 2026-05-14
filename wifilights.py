@@ -1,13 +1,13 @@
 import network
 import socket
 import time
+import gc
 from machine import Pin
 
 AP_SSID = 'ESP32_CARRO'
 AP_PASSWORD = '12345678'
 
-sta = network.WLAN(network.STA_IF)
-sta.active(False)
+network.WLAN(network.STA_IF).active(False)
 
 ap = network.WLAN(network.AP_IF)
 ap.active(False)
@@ -23,43 +23,30 @@ except:
 time.sleep(2)
 
 ip = ap.ifconfig()[0]
-print("Red WiFi creada:", AP_SSID)
-print("Password:", AP_PASSWORD)
+print("WiFi:", AP_SSID)
 print("IP:", ip)
 
 PIN_DRL = 19
 PIN_LOW = 18
-PIN_HIGH = 5
+PIN_HIGH = 26
 PIN_TL = 17
 PIN_TR = 16
 
-PIN_TAIL = 22
-PIN_BRAKE = 23
-PIN_REVERSE = 27
+PIN_TAIL = 13     #
+PIN_BRAKE = 14    #
+PIN_REVERSE = 27  # movido para no chocar
 
-PIN_CABIN = 4
-PIN_TRUNK_LIGHT = 21
-
-PIN_DOOR_L = 32
-PIN_DOOR_R = 33
-PIN_TRUNK_SW = 25
 
 drl = Pin(PIN_DRL, Pin.OUT, value=0)
 low = Pin(PIN_LOW, Pin.OUT, value=0)
 high = Pin(PIN_HIGH, Pin.OUT, value=0)
-tl = Pin(PIN_TL, Pin.OUT, value=0)
-tr = Pin(PIN_TR, Pin.OUT, value=0)
+
+left_signal = Pin(PIN_TL, Pin.OUT, value=0)
+right_signal = Pin(PIN_TR, Pin.OUT, value=0)
 
 tail = Pin(PIN_TAIL, Pin.OUT, value=0)
 brake = Pin(PIN_BRAKE, Pin.OUT, value=0)
 reverse = Pin(PIN_REVERSE, Pin.OUT, value=0)
-
-cabin_light = Pin(PIN_CABIN, Pin.OUT, value=0)
-trunk_light = Pin(PIN_TRUNK_LIGHT, Pin.OUT, value=0)
-
-door_left = Pin(PIN_DOOR_L, Pin.IN, Pin.PULL_UP)
-door_right = Pin(PIN_DOOR_R, Pin.IN, Pin.PULL_UP)
-trunk_switch = Pin(PIN_TRUNK_SW, Pin.IN, Pin.PULL_UP)
 
 state = {
     "drl": 0,
@@ -69,149 +56,112 @@ state = {
     "right": 0,
     "hazard": 0,
     "brake": 0,
-    "reverse": 0,
-    "cabin_mode": 0
+    "reverse": 0
 }
 
 blink_on = False
-last_blink_ms = time.ticks_ms()
-BLINK_PERIOD_MS = 500
-
-def doors_open():
-    return (door_left.value() == 0) or (door_right.value() == 0)
-
-def trunk_open():
-    return trunk_switch.value() == 0
+last_blink = time.ticks_ms()
 
 def apply_headlights_logic():
     drl_out = state["drl"]
     low_out = state["low"]
     high_out = state["high"]
 
-    if high_out == 1:
+    if high_out:
         low_out = 1
 
-    if low_out == 1 or high_out == 1:
+    if low_out or high_out:
         drl_out = 0
 
-    tail_out = 1 if (low_out == 1 or high_out == 1) else 0
+    state["low"] = low_out
+    state["drl"] = drl_out
+
+    tail_out = 1 if (low_out or high_out) else 0
 
     drl.value(drl_out)
     low.value(low_out)
     high.value(high_out)
     tail.value(tail_out)
 
-def update_blinking():
-    global blink_on, last_blink_ms
-
-    active_left = state["left"] == 1
-    active_right = state["right"] == 1
-    active_hazard = state["hazard"] == 1
-
-    if not (active_left or active_right or active_hazard):
-        tl.value(0)
-        tr.value(0)
-        blink_on = False
-        return
-
-    now = time.ticks_ms()
-    if time.ticks_diff(now, last_blink_ms) >= BLINK_PERIOD_MS:
-        last_blink_ms = now
-        blink_on = not blink_on
-
-        if active_hazard:
-            tl.value(1 if blink_on else 0)
-            tr.value(1 if blink_on else 0)
-        else:
-            tl.value(1 if (active_left and blink_on) else 0)
-            tr.value(1 if (active_right and blink_on) else 0)
-
-def update_aux_lights():
+def update_aux():
     brake.value(state["brake"])
     reverse.value(state["reverse"])
 
-def update_courtesy_lights():
-    if state["cabin_mode"] == 0:
-        cabin_light.value(0)
-    elif state["cabin_mode"] == 1:
-        cabin_light.value(1)
-    elif state["cabin_mode"] == 2:
-        cabin_light.value(1 if doors_open() else 0)
+def update_blinking():
+    global blink_on, last_blink
 
-    trunk_light.value(1 if trunk_open() else 0)
+    active_left = state["left"]
+    active_right = state["right"]
+    active_hazard = state["hazard"]
+
+    if not (active_left or active_right or active_hazard):
+        left_signal.value(0)
+        right_signal.value(0)
+        return
+
+    now = time.ticks_ms()
+
+    if time.ticks_diff(now, last_blink) >= 500:
+        last_blink = now
+        blink_on = not blink_on
+
+        if active_hazard:
+            left_signal.value(blink_on)
+            right_signal.value(blink_on)
+        else:
+            left_signal.value(blink_on if active_left else 0)
+            right_signal.value(blink_on if active_right else 0)
 
 def set_mode(mode, val):
     if mode in ("drl", "low", "high", "brake", "reverse"):
         state[mode] = val
         apply_headlights_logic()
-        update_aux_lights()
+        update_aux()
         return
 
     if mode == "left":
         state["left"] = val
-        if val == 1:
+        if val:
             state["right"] = 0
             state["hazard"] = 0
         return
 
     if mode == "right":
         state["right"] = val
-        if val == 1:
+        if val:
             state["left"] = 0
             state["hazard"] = 0
         return
 
     if mode == "hazard":
         state["hazard"] = val
-        if val == 1:
+        if val:
             state["left"] = 0
             state["right"] = 0
         return
 
-    if mode == "cabin_mode":
-        state["cabin_mode"] = val
-        return
-
 def status_badge(on):
-    return "<span style='padding:3px 8px;border-radius:10px;background:{};color:white;font-size:12px'>{}</span>".format(
-        "#2ecc71" if on else "#e74c3c",
-        "ON" if on else "OFF"
-    )
+    color = "#27ae60" if on else "#c0392b"
+    text = "ON" if on else "OFF"
+    return "<span style='background:{};padding:4px 10px;border-radius:12px;font-size:12px'>{}</span>".format(color, text)
 
-def sensor_badge(opened):
-    return "<span style='padding:3px 8px;border-radius:10px;background:{};color:white;font-size:12px'>{}</span>".format(
-        "#f39c12" if opened else "#555",
-        "ABIERTA" if opened else "CERRADA"
-    )
-
-def mode_badge(mode):
-    if mode == 0:
-        txt = "OFF"
-        color = "#e74c3c"
-    elif mode == 1:
-        txt = "ON"
-        color = "#2ecc71"
-    else:
-        txt = "AUTO"
-        color = "#3498db"
-
-    return "<span style='padding:3px 8px;border-radius:10px;background:{};color:white;font-size:12px'>{}</span>".format(color, txt)
+def button(label, url, color):
+    return "<a href='{}'><button style='width:105px;height:36px;margin:4px;border:0;border-radius:10px;background:{};color:white;font-weight:bold'>{}</button></a>".format(url, color, label)
 
 def web_page():
+    gc.collect()
+
     low_out = state["low"]
     high_out = state["high"]
     drl_out = state["drl"]
 
-    if high_out == 1:
+    if high_out:
         low_out = 1
-    if low_out == 1 or high_out == 1:
+
+    if low_out or high_out:
         drl_out = 0
 
-    tail_out = 1 if (low_out == 1 or high_out == 1) else 0
-
-    door_l_open = (door_left.value() == 0)
-    door_r_open = (door_right.value() == 0)
-    trunk_is_open = (trunk_switch.value() == 0)
+    tail_out = 1 if (low_out or high_out) else 0
 
     html = """<!DOCTYPE html>
 <html>
@@ -219,134 +169,75 @@ def web_page():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="1">
-<title>Control Automotriz</title>
+<title>ESP32 Car Control</title>
 </head>
-<body style="font-family:Arial;background:#0b1220;color:#fff;margin:0;padding:16px">
-<h2 style="margin:0 0 10px 0">Control de Luces Automotrices</h2>
-<p style="margin:0 0 18px 0;color:#b8c1d1">ESP32 IP: """ + ip + """</p>
 
-<div style="background:#111a2e;border-radius:12px;padding:14px;margin-bottom:12px">
-  <h3 style="margin:0 0 10px 0;font-size:16px">Luces delanteras</h3>
+<body style="font-family:Arial;background:#080f1f;color:white;margin:0;padding:16px">
 
-  <div style="margin:10px 0">
-    <b>DRL</b> """ + status_badge(drl_out) + """<br>
-    <a href="/?drl=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?drl=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<h2 style="text-align:center;margin-bottom:4px">ESP32 Car Control</h2>
+<p style="text-align:center;color:#9aa4b2;margin-top:0">IP: """ + ip + """</p>
 
-  <div style="margin:10px 0">
-    <b>Bajas</b> """ + status_badge(low_out) + """<br>
-    <a href="/?low=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?low=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<div style="background:#111a2e;border-radius:16px;padding:14px;margin-bottom:14px">
+<h3>Luces delanteras</h3>
 
-  <div style="margin:10px 0">
-    <b>Altas</b> """ + status_badge(high_out) + """<br>
-    <a href="/?high=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?high=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<p><b>DRL</b> """ + status_badge(drl_out) + """</p>
+""" + button("ON", "/?drl=on", "#27ae60") + button("OFF", "/?drl=off", "#c0392b") + """
+
+<p><b>Bajas</b> """ + status_badge(low_out) + """</p>
+""" + button("ON", "/?low=on", "#27ae60") + button("OFF", "/?low=off", "#c0392b") + """
+
+<p><b>Altas</b> """ + status_badge(high_out) + """</p>
+""" + button("ON", "/?high=on", "#27ae60") + button("OFF", "/?high=off", "#c0392b") + """
 </div>
 
-<div style="background:#111a2e;border-radius:12px;padding:14px;margin-bottom:12px">
-  <h3 style="margin:0 0 10px 0;font-size:16px">Direccionales</h3>
+<div style="background:#111a2e;border-radius:16px;padding:14px;margin-bottom:14px">
+<h3>Direccionales</h3>
 
-  <div style="margin:10px 0">
-    <b>Izquierda</b> """ + status_badge(state["left"]) + """<br>
-    <a href="/?left=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?left=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<p><b>Izquierda</b> """ + status_badge(state["left"]) + """</p>
+""" + button("ON", "/?left=on", "#f39c12") + button("OFF", "/?left=off", "#c0392b") + """
 
-  <div style="margin:10px 0">
-    <b>Derecha</b> """ + status_badge(state["right"]) + """<br>
-    <a href="/?right=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?right=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<p><b>Derecha</b> """ + status_badge(state["right"]) + """</p>
+""" + button("ON", "/?right=on", "#f39c12") + button("OFF", "/?right=off", "#c0392b") + """
 
-  <div style="margin:10px 0">
-    <b>Hazard</b> """ + status_badge(state["hazard"]) + """<br>
-    <a href="/?hazard=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?hazard=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<p><b>Hazard</b> """ + status_badge(state["hazard"]) + """</p>
+""" + button("ON", "/?hazard=on", "#f39c12") + button("OFF", "/?hazard=off", "#c0392b") + """
 </div>
 
-<div style="background:#111a2e;border-radius:12px;padding:14px;margin-bottom:12px">
-  <h3 style="margin:0 0 10px 0;font-size:16px">Luces traseras</h3>
+<div style="background:#111a2e;border-radius:16px;padding:14px;margin-bottom:14px">
+<h3>Luces traseras</h3>
 
-  <div style="margin:10px 0">
-    <b>Traseras nocturnas</b> """ + status_badge(tail_out) + """
-  </div>
+<p><b>Traseras nocturnas</b> """ + status_badge(tail_out) + """</p>
 
-  <div style="margin:10px 0">
-    <b>Freno</b> """ + status_badge(state["brake"]) + """<br>
-    <a href="/?brake=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?brake=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<p><b>Freno</b> """ + status_badge(state["brake"]) + """</p>
+""" + button("ON", "/?brake=on", "#e74c3c") + button("OFF", "/?brake=off", "#c0392b") + """
 
-  <div style="margin:10px 0">
-    <b>Reversa</b> """ + status_badge(state["reverse"]) + """<br>
-    <a href="/?reverse=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?reverse=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-  </div>
+<p><b>Reversa</b> """ + status_badge(state["reverse"]) + """</p>
+""" + button("ON", "/?reverse=on", "#3498db") + button("OFF", "/?reverse=off", "#c0392b") + """
 </div>
 
-<div style="background:#111a2e;border-radius:12px;padding:14px;margin-bottom:12px">
-  <h3 style="margin:0 0 10px 0;font-size:16px">Cortesía</h3>
-
-  <div style="margin:10px 0">
-    <b>Cabina</b> """ + mode_badge(state["cabin_mode"]) + """<br>
-    <a href="/?cabin_mode=off"><button style="width:110px;height:34px;margin-top:6px">OFF</button></a>
-    <a href="/?cabin_mode=on"><button style="width:110px;height:34px;margin-top:6px">ON</button></a>
-    <a href="/?cabin_mode=auto"><button style="width:110px;height:34px;margin-top:6px">AUTO</button></a>
-  </div>
-
-  <div style="margin:10px 0">
-    <b>Puerta izquierda</b> """ + sensor_badge(door_l_open) + """
-  </div>
-
-  <div style="margin:10px 0">
-    <b>Puerta derecha</b> """ + sensor_badge(door_r_open) + """
-  </div>
-
-  <div style="margin:10px 0">
-    <b>Cajuela</b> """ + sensor_badge(trunk_is_open) + """
-  </div>
-
-  <div style="margin:10px 0">
-    <b>Luz cabina</b> """ + status_badge(cabin_light.value()) + """
-  </div>
-
-  <div style="margin:10px 0">
-    <b>Luz cajuela</b> """ + status_badge(trunk_light.value()) + """
-  </div>
-</div>
-
-<p style="color:#b8c1d1;font-size:12px">
-Nota: Altas enciende también Bajas. Bajas o Altas apagan DRL y encienden las traseras nocturnas. La luz de cajuela siempre depende de su switch.
+<p style="font-size:12px;color:#9aa4b2;text-align:center">
+Altas activan bajas. Bajas/altas apagan DRL y encienden traseras.
 </p>
 
 </body>
 </html>"""
+
     return html
 
-def parse_request(req):
+def parse(req):
     try:
         r = req.decode()
     except:
         return None, None
 
     keys = ["drl", "low", "high", "left", "right", "hazard", "brake", "reverse"]
-    for k in keys:
-        if ("/?{}=on".format(k)) in r:
-            return k, 1
-        if ("/?{}=off".format(k)) in r:
-            return k, 0
 
-    if "/?cabin_mode=off" in r:
-        return "cabin_mode", 0
-    if "/?cabin_mode=on" in r:
-        return "cabin_mode", 1
-    if "/?cabin_mode=auto" in r:
-        return "cabin_mode", 2
+    for k in keys:
+        if "/?{}=on".format(k) in r:
+            return k, 1
+
+        if "/?{}=off".format(k) in r:
+            return k, 0
 
     return None, None
 
@@ -358,39 +249,43 @@ s.settimeout(0.2)
 
 print("Servidor listo")
 print("Conectate a:", AP_SSID)
-print("Abre en tu navegador: http://192.168.4.1")
+print("Abre: http://192.168.4.1")
 
 apply_headlights_logic()
-update_aux_lights()
-update_courtesy_lights()
+update_aux()
 
 while True:
     update_blinking()
-    update_courtesy_lights()
 
     try:
         conn, addr = s.accept()
     except OSError:
+        gc.collect()
         continue
 
     try:
         req = conn.recv(1024)
-        mode, val = parse_request(req)
+
+        mode, val = parse(req)
+
         if mode is not None:
             set_mode(mode, val)
 
         apply_headlights_logic()
-        update_aux_lights()
-        update_courtesy_lights()
+        update_aux()
 
-        resp = web_page()
+        response = web_page()
+
         conn.send("HTTP/1.1 200 OK\r\n")
         conn.send("Content-Type: text/html; charset=utf-8\r\n")
         conn.send("Connection: close\r\n\r\n")
-        conn.sendall(resp)
+        conn.sendall(response)
+
+        gc.collect()
+
     except Exception as e:
         print("Error:", e)
+
     finally:
         conn.close()
-
-#Cambio para probar commit en nueva branch
+        gc.collect()
